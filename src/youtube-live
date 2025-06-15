@@ -1,0 +1,21 @@
+#!/bin/sh
+
+CONFIG_FILE="/etc/config/youtube-live"
+. /usr/bin/youtube-live-helper
+
+case $1 in
+    start)
+        start_stream
+        ;;
+    stop)
+        stop_stream
+        ;;
+    status)
+        check_status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}"
+        exit 1
+esac
+
+exit 0
