@@ -1,0 +1,85 @@
+<%+header%>
+
+<div class="cbi-map">
+<h2 name="content"><%:YouTube Live Streaming Control%></h2>
+
+<div class="cbi-section">
+    <div class="cbi-section-node">
+        <div class="table">
+            <div class="tr">
+                <div class="td left" width="33%"><%:Current Status%></div>
+                <div class="td left">
+                    <strong id="status-text">-</strong>
+                    <span id="status-spinner" style="display:none">
+                        <img src="<%=resource%>/icons/loading.gif" alt="<%:Loading%>" />
+                    </span>
+                </div>
+            </div>
+            <div class="tr">
+                <div class="td left" width="33%"><%:Actions%></div>
+                <div class="td left">
+                    <input type="button" id="btn-start" class="cbi-button cbi-button-apply" value="<%:Start Stream%>" />
+                    <input type="button" id="btn-stop" class="cbi-button cbi-button-reset" value="<%:Stop Stream%>" />
+                    <input type="button" id="btn-refresh" class="cbi-button cbi-button-reload" value="<%:Refresh Status%>" />
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+function updateStatus() {
+    var statusText = document.getElementById('status-text');
+    var statusSpinner = document.getElementById('status-spinner');
+    
+    statusText.style.display = 'none';
+    statusSpinner.style.display = 'inline';
+    
+    XHR.get('<%=url("admin/services/youtube-live/action")%>', { cmd: 'status' },
+        function(x, status) {
+            status = status.trim();
+            statusText.innerHTML = (status === 'running') ? '<%:Running%>' : '<%:Stopped%>';
+            statusText.style.display = 'inline';
+            statusSpinner.style.display = 'none';
+            
+            document.getElementById('btn-start').disabled = (status === 'running');
+            document.getElementById('btn-stop').disabled = (status !== 'running');
+        }
+    );
+}
+
+document.getElementById('btn-start').onclick = function() {
+    if (confirm('<%:Are you sure you want to start the stream?%>')) {
+        XHR.get('<%=url("admin/services/youtube-live/action")%>', { cmd: 'start' },
+            function(x, res) {
+                alert(res.trim() || '<%:Stream started%>');
+                setTimeout(updateStatus, 2000);
+            }
+        );
+    }
+};
+
+document.getElementById('btn-stop').onclick = function() {
+    if (confirm('<%:Are you sure you want to stop the stream?%>')) {
+        XHR.get('<%=url("admin/services/youtube-live/action")%>', { cmd: 'stop' },
+            function(x, res) {
+                alert(res.trim() || '<%:Stream stopped%>');
+                setTimeout(updateStatus, 2000);
+            }
+        );
+    }
+};
+
+document.getElementById('btn-refresh').onclick = function() {
+    updateStatus();
+};
+
+// Initial status check
+updateStatus();
+// Periodic status update every 5 seconds
+setInterval(updateStatus, 5000);
+//]]>
+</script>
+
+<%+footer%>
