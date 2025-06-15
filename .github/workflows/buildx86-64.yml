@@ -7,7 +7,8 @@ on:
     branches: [ main ]
 
 env:
-  OPENWRT_VERSION: "23.05.2"  # Gunakan versi stabil terbaru
+  OPENWRT_VERSION: "23.05.2"
+  TARGET: "x86/64"  # Default target architecture
 
 permissions:
   contents: read
@@ -18,21 +19,18 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        path: 'src'  # Mengekstrak repo ke folder 'src'
 
     - name: Setup OpenWRT ImageBuilder
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libncurses5-dev unzip curl
 
-        # Download ImageBuilder
-        IB_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/x86/64/openwrt-imagebuilder-${{ env.OPENWRT_VERSION }}-x86-64.Linux-x86_64.tar.xz"
+        IB_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/${{ env.TARGET }}/openwrt-imagebuilder-${{ env.OPENWRT_VERSION }}-${{ env.TARGET//\//- }}.Linux-x86_64.tar.xz"
         echo "Downloading ImageBuilder from: $IB_URL"
         
-        if ! wget "$IB_URL" -O imagebuilder.tar.xz; then
-          echo "::error::Failed to download ImageBuilder"
-          exit 1
-        fi
-
+        wget "$IB_URL" -O imagebuilder.tar.xz || { echo "::error::Failed to download ImageBuilder"; exit 1; }
         tar xf imagebuilder.tar.xz || { echo "::error::Failed to extract ImageBuilder"; exit 1; }
         rm imagebuilder.tar.xz
         mv openwrt-imagebuilder-* openwrt-imagebuilder
@@ -40,23 +38,32 @@ jobs:
 
     - name: Prepare plugin package
       run: |
+        # Copy seluruh isi repo ke package directory
         mkdir -p $IB_PATH/package/youtube-live
-        cp -r Makefile src files $IB_PATH/package/youtube-live/
+        cp -r src/* $IB_PATH/package/youtube-live/
+        
+        # Verifikasi file penting ada
+        if [ ! -f "$IB_PATH/package/youtube-live/Makefile" ]; then
+          echo "::error::Makefile not found in the repository"
+          ls -la $IB_PATH/package/youtube-live/
+          exit 1
+        fi
 
-    - name: Build image with plugin
+    - name: Build package
       run: |
         cd $IB_PATH
-        make image PROFILE="generic" PACKAGES="youtube-live" EXTRA_IMAGE_NAME="with-youtube-live"
+        make package/youtube-live/compile V=s
 
     - name: Collect artifacts
       run: |
         mkdir -p $GITHUB_WORKSPACE/artifacts
-        cp $IB_PATH/bin/targets/x86/64/openwrt-*-with-youtube-live* $GITHUB_WORKSPACE/artifacts/
-        cp $IB_PATH/bin/packages/x86_64/base/youtube-live*.ipk $GITHUB_WORKSPACE/artifacts/
+        cp $IB_PATH/bin/packages/*/base/youtube-live*.ipk $GITHUB_WORKSPACE/artifacts/
+        echo "IPK files:"
+        ls -la $GITHUB_WORKSPACE/artifacts/
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-youtube-live
+        name: youtube-live-plugin
         path: artifacts/
         retention-days: 7
