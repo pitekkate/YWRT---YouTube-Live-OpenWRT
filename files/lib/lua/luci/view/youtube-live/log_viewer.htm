@@ -1,0 +1,55 @@
+<%+header%>
+
+<div class="cbi-map">
+<h2 name="content"><%:Stream Log%></h2>
+
+<div class="cbi-section">
+    <div class="cbi-section-node">
+        <div class="cbi-value">
+            <label class="cbi-value-title"><%:Latest Log Output%></label>
+            <div class="cbi-value-field">
+                <textarea id="log-content" readonly="readonly" wrap="off" style="width:100%; height:200px; font-family:monospace"></textarea>
+            </div>
+        </div>
+        <div class="cbi-value">
+            <div class="cbi-value-field">
+                <input type="button" id="btn-refresh-log" class="cbi-button cbi-button-reload" value="<%:Refresh Log%>" />
+                <input type="button" id="btn-clear-log" class="cbi-button cbi-button-reset" value="<%:Clear Log%>" />
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+function updateLog() {
+    XHR.get('<%=url("admin/services/youtube-live/log")%>', null,
+        function(x, log) {
+            document.getElementById('log-content').value = log.trim();
+            // Auto-scroll to bottom
+            var textarea = document.getElementById('log-content');
+            textarea.scrollTop = textarea.scrollHeight;
+        }
+    );
+}
+
+document.getElementById('btn-refresh-log').onclick = function() {
+    updateLog();
+};
+
+document.getElementById('btn-clear-log').onclick = function() {
+    if (confirm('<%:Are you sure you want to clear the log?%>')) {
+        XHR.post('<%=url("admin/services/youtube-live/action")%>', { cmd: 'clearlog' },
+            function() {
+                updateLog();
+            }
+        );
+    }
+};
+
+// Initial log load
+updateLog();
+//]]>
+</script>
+
+<%+footer%>
