@@ -1,0 +1,97 @@
+#!/bin/sh
+
+CONFIG_FILE="/etc/config/youtube-live"
+LOG_FILE="/tmp/youtube-live.log"
+PID_FILE="/var/run/youtube-live.pid"
+
+load_config() {
+    STREAM_KEY=$(uci get youtube-live.config.stream_key 2>/dev/null)
+    RESOLUTION=$(uci get youtube-live.config.resolution 2>/dev/null)
+    FRAMERATE=$(uci get youtube-live.config.framerate 2>/dev/null)
+    VIDEO_SOURCE=$(uci get youtube-live.config.video_source 2>/dev/null)
+    VIDEO_FILE=$(uci get youtube-live.config.video_file 2>/dev/null)
+    AUDIO_SOURCE=$(uci get youtube-live.config.audio_source 2>/dev/null)
+    BITRATE=$(uci get youtube-live.config.bitrate 2>/dev/null || echo "3000k")
+}
+
+start_stream() {
+    load_config
+    
+    # Validate configuration
+    [ -z "$STREAM_KEY" ] && { echo "Error: YouTube stream key not set"; exit 1; }
+    
+    # Prepare video input
+    case $VIDEO_SOURCE in
+        "webcam")
+            [ ! -e "/dev/video0" ] && { echo "Error: Webcam device not found"; exit 1; }
+            VIDEO_INPUT="-f video4linux2 -i /dev/video0"
+            ;;
+        "file")
+            [ ! -f "$VIDEO_FILE" ] && { echo "Error: Video file not found: $VIDEO_FILE"; exit 1; }
+            VIDEO_INPUT="-re -i \"$VIDEO_FILE\""
+            ;;
+        *)
+            echo "Error: Invalid video source"; exit 1
+            ;;
+    esac
+    
+    # Prepare audio input
+    case $AUDIO_SOURCE in
+        "alsa")
+            AUDIO_INPUT="-f alsa -i hw:0"
+            ;;
+        "none")
+            AUDIO_INPUT="-an"
+            ;;
+        *)
+            echo "Error: Invalid audio source"; exit 1
+            ;;
+    esac
+    
+    # Build FFmpeg command
+    FFMPEG_CMD="ffmpeg \
+        $VIDEO_INPUT \
+        $AUDIO_INPUT \
+        -vf \"scale=$RESOLUTION\" -r $FRAMERATE \
+        -c:v libx264 -preset veryfast -b:v $BITRATE -maxrate $BITRATE -bufsize $((${BITRATE%k}*2))k \
+        -pix_fmt yuv420p -g 60 \
+        -c:a aac -b:a 160k -ar 44100 \
+        -f flv \"rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY\""
+    
+    echo "Starting stream with command:"
+    echo "$FFMPEG_CMD"
+    
+    # Start streaming
+    eval "$FFMPEG_CMD" > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    
+    echo "Stream started with PID $(cat $PID_FILE)"
+}
+
+stop_stream() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        kill -TERM "$PID" 2>/dev/null
+        rm -f "$PID_FILE"
+        echo "Stream stopped (PID $PID)"
+    else
+        pkill -f "ffmpeg.*youtube.com"
+        echo "Stream stopped (by process name)"
+    fi
+}
+
+check_status() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if ps | grep -q "^ *$PID "; then
+            echo "running"
+            return 0
+        fi
+    fi
+    
+    if pgrep -f "ffmpeg.*youtube.com" >/dev/null; then
+        echo "running"
+    else
+        echo "stopped"
+    fi
+}
