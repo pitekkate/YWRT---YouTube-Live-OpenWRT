@@ -1,0 +1,92 @@
+#!/bin/sh /etc/rc.common
+
+# Copyright (C) 2023 Your Name
+# This is free software, licensed under the GNU General Public License v3.
+
+USE_PROCD=1
+START=99
+STOP=10
+RETRY=5
+NAME=youtube-live
+CONFIG=/etc/config/youtube-live
+BIN=/usr/bin/youtube-live
+LOG_FILE=/tmp/youtube-live.log
+PID_FILE=/var/run/youtube-live.pid
+
+validate_config() {
+    # Check if configuration exists
+    [ ! -f "$CONFIG" ] && {
+        logger -t "$NAME" "Error: Configuration file $CONFIG not found"
+        return 1
+    }
+
+    # Check if stream key is set
+    local stream_key=$(uci -q get "$CONFIG.config.stream_key")
+    [ -z "$stream_key" ] && {
+        logger -t "$NAME" "Error: YouTube stream key not configured"
+        return 1
+    }
+
+    # Check video source configuration
+    local video_source=$(uci -q get "$CONFIG.config.video_source")
+    case "$video_source" in
+        "webcam")
+            [ ! -c "/dev/video0" ] && {
+                logger -t "$NAME" "Error: Webcam device /dev/video0 not found"
+                return 1
+            }
+            ;;
+        "file")
+            local video_file=$(uci -q get "$CONFIG.config.video_file")
+            [ ! -f "$video_file" ] && {
+                logger -t "$NAME" "Error: Video file $video_file not found"
+                return 1
+            }
+            ;;
+        *)
+            logger -t "$NAME" "Error: Invalid video source '$video_source'"
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+start_service() {
+    # Validate configuration before starting
+    if ! validate_config; then
+        logger -t "$NAME" "Configuration validation failed, not starting service"
+        exit 1
+    fi
+
+    # Prepare environment
+    [ -f "$LOG_FILE" ] && rm -f "$LOG_FILE"
+    [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+
+    logger -t "$NAME" "Starting YouTube Live Streaming service"
+
+    procd_open_instance
+    procd_set_param command "$BIN" start
+    procd_set_param respawn ${RETRY:-3600} ${RETRY:-5} ${RETRY:-0}
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param pidfile "$PID_FILE"
+    procd_set_param file "$CONFIG"
+    procd_close_instance
+}
+
+stop_service() {
+    logger -t "$NAME" "Stopping YouTube Live Streaming service"
+    "$BIN" stop
+    [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+}
+
+reload_service() {
+    logger -t "$NAME" "Reloading YouTube Live Streaming service"
+    stop
+    start
+}
+
+service_triggers() {
+    procd_add_reload_trigger "youtube-live"
+}
