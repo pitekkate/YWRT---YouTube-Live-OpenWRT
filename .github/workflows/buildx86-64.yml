@@ -1,0 +1,49 @@
+name: Build OpenWRT YouTube Live Plugin
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        openwrt_version: [ "22.03.5", "23.05.0" ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up OpenWRT SDK
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses5-dev unzip
+        OPENWRT_SDK_URL="https://downloads.openwrt.org/releases/${{ matrix.openwrt_version }}/targets/x86/64/openwrt-sdk-${{ matrix.openwrt_version }}-x86-64_gcc-11.3.0_musl.Linux-x86_64.tar.xz"
+        wget $OPENWRT_SDK_URL
+        tar xf openwrt-sdk-*.tar.xz
+        rm openwrt-sdk-*.tar.xz
+        mv openwrt-sdk-* openwrt-sdk
+        echo "OPENWRT_SDK_PATH=$(pwd)/openwrt-sdk" >> $GITHUB_ENV
+
+    - name: Prepare plugin
+      run: |
+        mkdir -p $OPENWRT_SDK_PATH/package/youtube-live
+        cp -r Makefile src files $OPENWRT_SDK_PATH/package/youtube-live/
+        cd $OPENWRT_SDK_PATH
+        ./scripts/feeds update -a
+
+    - name: Build plugin
+      run: |
+        cd $OPENWRT_SDK_PATH
+        make defconfig
+        make package/youtube-live/compile V=s -j$(nproc)
+        mkdir -p $GITHUB_WORKSPACE/artifacts/${{ matrix.openwrt_version }}
+        cp bin/packages/*/base/youtube-live*.ipk $GITHUB_WORKSPACE/artifacts/${{ matrix.openwrt_version }}/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: youtube-live-plugin-${{ matrix.openwrt_version }}
+        path: artifacts/${{ matrix.openwrt_version }}/
